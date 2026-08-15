@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Template RPG VR</title>
+
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    <script src="https://unpkg.com/aframe-look-at-component@1.0.0/dist/aframe-look-at-component.min.js"></script>
+    
+    <style>
+        #startOverlay {
+            position: absolute;
+            z-index: 9999;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-family: sans-serif;
+        }
+        #startButton {
+            margin-top: 20px;
+            padding: 15px 40px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            background: #0b4b94;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            transition: 0.3s;
+        }
+        #startButton:hover { background: #136bc9; }
+    </style>
+</head>
+
+<body>
+
+<div id="startOverlay">
+    <h1>Nome da Cena</h1>
+    <p>Coloque os fones de ouvido para a melhor experiência imersiva.</p>
+    <button id="startButton">ENTRAR NA SALA</button>
+</div>
+
+<a-scene webxr="referenceSpaceType: local">
+
+    <a-assets>
+        <audio id="musicaAmbiente" src="Trilha_01.mp3" preload="auto"></audio>
+        <video id="videoSaida" src="Video_Final.mp4" preload="auto"></video>
+        </a-assets>
+
+    <a-sky src="Imagem.png"></a-sky>
+    
+    <a-entity id="hotspotContainer"></a-entity>
+
+    <a-plane id="referenceGrid" visible="false" position="0 1.5 -3" rotation="-90 0 0" width="20" height="20" color="#222222" material="wireframe:true"></a-plane>
+
+    <a-entity id="cameraRig" position="0 0 0">
+        <a-entity id="head" camera look-controls position="0 0 0">
+            <a-cursor id="cursor" color="white" fuse="false" geometry="primitive:ring; radiusInner:0.01; radiusOuter:0.02"></a-cursor>
+            <a-ring id="progressRing" position="0 0 -1" radius-inner="0.028" radius-outer="0.04" color="white" opacity="0.8" theta-length="0"></a-ring>
+            <a-text id="actionText" value="" position="0 0.1 -1" align="center" width="1.5" color="#FFD700"></a-text>
+            <a-plane id="videoScreen" visible="false" width="4" height="2.25" position="0 0 -0.8" material="src:#videoSaida"></a-plane>
+        </a-entity>
+    </a-entity>
+
+</a-scene>
+
+<script>
+window.onload = () => {
+    const musica = document.querySelector("#musicaAmbiente");
+    const startOverlay = document.getElementById("startOverlay");
+    const startButton = document.getElementById("startButton");
+    
+    musica.volume = 0.10; 
+    musica.loop = true; 
+
+    startButton.addEventListener("click", () => {
+        musica.play().catch(e => console.log("Erro ao tocar música:", e));
+        document.querySelectorAll('audio').forEach(audio => {
+            if (audio.id !== "musicaAmbiente") {
+                audio.load();
+            }
+        });
+        startOverlay.style.display = "none";
+    });
+
+    const hotspotContainer = document.querySelector("#hotspotContainer");
+    const progressRing = document.querySelector("#progressRing");
+    const actionText = document.querySelector("#actionText");
+    const rig = document.querySelector("#cameraRig");
+    const head = document.querySelector("#head");
+
+    let debugMode = false; let videoTocando = false; let isRecentering = false;
+
+    // ARRAY DE BOTÕES (HOTSPOTS)
+ 
+
+    hotspots.forEach((data, index) => {
+        const hotspot = document.createElement("a-circle");
+        hotspot.setAttribute("id", "hotspot_" + index);
+        hotspot.setAttribute("position", data.posicao);
+        hotspot.setAttribute("radius", data.raio); 
+        hotspot.setAttribute("side", "double");
+        hotspot.setAttribute("look-at", "#head");
+
+        if (data.isVideo) {
+            hotspot.setAttribute("color", "#0b4b94"); 
+            hotspot.setAttribute("opacity", "0.7");   
+            hotspot.setAttribute("animation", "property: scale; to: 1.1 1.1 1.1; dir: alternate; loop: true; dur: 1000");
+        } else {
+            hotspot.setAttribute("color", "#AAAAAA");
+            hotspot.setAttribute("opacity", debugMode ? "0.20" : "0");
+        }
+
+        const tagLabel = document.createElement("a-text");
+        tagLabel.setAttribute("class", "debugLabel");
+        tagLabel.setAttribute("value", data.audio ? `Audio: ${data.audio}` : `Trigger: ${data.nome}`);
+        tagLabel.setAttribute("position", "0 0.15 0"); 
+        tagLabel.setAttribute("align", "center");
+        tagLabel.setAttribute("width", "1.8");
+        tagLabel.setAttribute("color", "#00FF00"); 
+        tagLabel.setAttribute("visible", debugMode); 
+        hotspot.appendChild(tagLabel);
+        hotspotContainer.appendChild(hotspot);
+
+        let timer = null; let progress = 0; let isCoolingDown = false; 
+
+        hotspot.addEventListener("mouseenter", () => {
+            if (videoTocando || isRecentering) return;
+            
+            if (!data.isVideo) {
+                hotspot.setAttribute("opacity", "0.45");
+                hotspot.setAttribute("scale", "1.15 1.15 1.15");
+            }
+            
+            if (data.mensagem) {
+                actionText.setAttribute("value", data.mensagem);
+                actionText.setAttribute("color", data.corTexto ? data.corTexto : "#FFD700");
+            }
+            
+            progress = 0; isCoolingDown = true; 
+            setTimeout(() => { isCoolingDown = false; }, 500);
+            
+            timer = setInterval(() => {
+                if (isCoolingDown || videoTocando || isRecentering) return; 
+                progress += 50;
+                const percent = (progress / data.tempo) * 360;
+                progressRing.setAttribute("theta-length", percent);
+                
+                if (progress >= data.tempo) {
+                    isCoolingDown = true; progressRing.setAttribute("theta-length", "0");
+                    
+                    if (data.audio) { 
+                        const audio = document.querySelector("#" + data.audio); 
+                        if (audio) { audio.currentTime = 0; audio.play(); } 
+                    }
+                    
+                    if (!data.isVideo) {
+                        hotspot.setAttribute("opacity", "0.85"); 
+                        hotspot.setAttribute("color", "#FFFFFF");
+                    }
+                    
+                    if (data.isVideo) {
+                        videoTocando = true; actionText.setAttribute("value", ""); 
+                        const screen = document.querySelector("#videoScreen"); const video = document.querySelector("#videoSaida");
+                        screen.setAttribute("visible", true); video.play();
+                        video.onended = () => { screen.setAttribute("visible", false); videoTocando = false; };
+                    }
+                    
+                    setTimeout(() => { progress = 0; isCoolingDown = false; }, 1500); 
+                }
+            }, 50);
+        });
+
+        hotspot.addEventListener("mouseleave", () => {
+            clearInterval(timer); isCoolingDown = false; progressRing.setAttribute("theta-length", "0");
+            
+            if (!data.isVideo) {
+                hotspot.setAttribute("opacity", debugMode ? "0.20" : "0"); 
+                hotspot.setAttribute("color", "#AAAAAA"); 
+                hotspot.setAttribute("scale", "1 1 1");
+            }
+            
+            if (data.mensagem && !videoTocando && !isRecentering) { actionText.setAttribute("value", ""); }
+        });
+    });
+
+    // ==========================================
+    // SISTEMA HÍBRIDO DE RECENTRALIZAÇÃO
+    // ==========================================
+    const executarRecentralizacaoManual = () => {
+        if (isRecentering || videoTocando) return;
+        
+        isRecentering = true; 
+        actionText.setAttribute("color", "#00FF00");
+        let countdown = 3;
+        actionText.setAttribute("value", `Olhe para a frente: ${countdown}`);
+        
+        let cdTimer = setInterval(() => {
+            countdown--;
+            if (countdown > 0) {
+                actionText.setAttribute("value", `Olhe para a frente: ${countdown}`);
+            } else {
+                clearInterval(cdTimer);
+                actionText.setAttribute("value", "Centro atualizado!");
+                
+                const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+                euler.setFromQuaternion(head.object3D.quaternion);
+                rig.object3D.rotation.y -= euler.y;
+                
+                setTimeout(() => {
+                    actionText.setAttribute("value", "");
+                    isRecentering = false; 
+                }, 2000);
+            }
+        }, 1000);
+    };
+
+    // 1. Gatilho para controles VR estilo "Mouse" (Protegido no modo Debug)
+    window.addEventListener("click", () => {
+        if (startOverlay.style.display === "none" && !debugMode) {
+            executarRecentralizacaoManual();
+        }
+    });
+
+    // 2. Gatilho para Gamepads/Controles padrão (Protegido no modo Debug)
+    const initGamepadSupport = () => {
+        const checkGamepad = () => {
+            const gamepads = navigator.getGamepads();
+            if (gamepads[0]) {
+                const gp = gamepads[0];
+                if (gp.buttons[0]?.pressed || gp.buttons[1]?.pressed || gp.buttons[2]?.pressed || gp.buttons[3]?.pressed) {
+                    if (startOverlay.style.display === "none" && !debugMode) {
+                        executarRecentralizacaoManual();
+                    }
+                }
+            }
+            requestAnimationFrame(checkGamepad);
+        };
+        checkGamepad();
+    };
+    initGamepadSupport();
+    // ==========================================
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key.toLowerCase() === "h") {
+            debugMode = !debugMode;
+            const ref = document.querySelector("#referenceGrid"); if (ref) ref.setAttribute("visible", debugMode);
+            
+            document.querySelectorAll("a-circle").forEach(h => {
+                if (h.id && h.id.includes("hotspot_")) {
+                    const index = parseInt(h.id.split("_")[1]);
+                    if (!hotspots[index].isVideo) {
+                        h.setAttribute("opacity", debugMode ? "0.20" : "0");
+                    }
+                }
+            });
+            
+            document.querySelectorAll(".debugLabel").forEach(l => l.setAttribute("visible", debugMode));
+            console.log("DEBUG:", debugMode ? "ON" : "OFF");
+        }
+    });
+};
+</script>
+
+</body>
+</html>
